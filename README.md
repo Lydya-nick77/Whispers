@@ -1,4 +1,5 @@
-# lydya
+# Lydya's FFXI addon repository
+
 Repository of addons for FFXI
 Enjoy to try / modify them!
 
