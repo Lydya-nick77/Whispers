@@ -54,6 +54,7 @@ local VK_CONTROL = 0x11
 local VK_SHIFT = 0x10
 local VK_MENU = 0x12
 local VK_ESCAPE = 0x1B
+local VK_TAB = 0x09
 local all_tab_shortcut_commands = {
     [0x48] = '/sh',
     [0x4C] = '/l',
@@ -1086,6 +1087,12 @@ local function is_focus_input_shortcut_down(context)
         return false
     end
 
+    -- Never allow TAB to act as the focus-input shortcut;
+    -- TAB is used for navigation in-game and should not focus this input.
+    if vkey == VK_TAB then
+        return false
+    end
+
     if shortcut_cfg.require_ctrl and not is_vkey_down(VK_CONTROL) then
         return false
     end
@@ -1476,7 +1483,23 @@ function ui.render(context)
                                     state.focus_input_requested = nil
                                 end
                                 local was_all_tab_input_active = state.all_tab_input_active == true
+                                -- Keep this text box clickable, but out of TAB focus traversal.
+                                local tab_focus_guard = nil
+                                if imgui.PushItemFlag ~= nil and imgui.PopItemFlag ~= nil and ImGuiItemFlags_NoTabStop ~= nil then
+                                    imgui.PushItemFlag(ImGuiItemFlags_NoTabStop, true)
+                                    tab_focus_guard = 'item_flag'
+                                elseif imgui.PushAllowKeyboardFocus ~= nil and imgui.PopAllowKeyboardFocus ~= nil then
+                                    imgui.PushAllowKeyboardFocus(false)
+                                    tab_focus_guard = 'allow_keyboard_focus'
+                                end
+
                                 local enter_pressed = imgui.InputText(input_id, state.input_text, ui_cfg.input_max_length, ImGuiInputTextFlags_EnterReturnsTrue)
+
+                                if tab_focus_guard == 'item_flag' then
+                                    imgui.PopItemFlag()
+                                elseif tab_focus_guard == 'allow_keyboard_focus' then
+                                    imgui.PopAllowKeyboardFocus()
+                                end
                                 if name == context.all_tab and trim_text(state.input_text[1] or ''):match('^/') ~= nil then
                                     -- If the user starts typing an explicit slash command, stop forcing shortcut prefix mode.
                                     state.all_tab_active_command = nil
@@ -1485,11 +1508,6 @@ function ui.render(context)
                                 apply_all_tab_escape_clear(context, name)
                                 apply_all_tab_input_shortcuts(context, name, input_before)
                                 if enter_pressed then
-                                    context.queue_tab_message(name, display, state.input_text[1] or '')
-                                end
-
-                                imgui.SameLine()
-                                if imgui.Button('Send') then
                                     context.queue_tab_message(name, display, state.input_text[1] or '')
                                 end
 
