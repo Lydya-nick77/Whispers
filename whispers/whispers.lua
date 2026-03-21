@@ -138,6 +138,25 @@ local save_last_clock = 0
 local save_messages
 local mark_save_needed
 
+local function trim_oldest_messages(tab_msgs, max_msgs)
+    if type(tab_msgs) ~= 'table' then
+        return
+    end
+
+    local count = #tab_msgs
+    if count <= max_msgs then
+        return
+    end
+
+    local drop_count = count - max_msgs
+    for i = 1, max_msgs do
+        tab_msgs[i] = tab_msgs[i + drop_count]
+    end
+    for i = max_msgs + 1, count do
+        tab_msgs[i] = nil
+    end
+end
+
 local function clamp_int(value, fallback, min_value)
     local n = math.floor(tonumber(value) or fallback or 0)
     if min_value ~= nil and n < min_value then
@@ -169,9 +188,7 @@ local function trim_messages_by_limits()
     for canonical, tab_msgs in pairs(tells) do
         if type(tab_msgs) == 'table' then
             local max_msgs = (canonical == combat_tab_canonical) and combat_max or chat_max
-            while #tab_msgs > max_msgs do
-                table.remove(tab_msgs, 1)
-            end
+            trim_oldest_messages(tab_msgs, max_msgs)
         end
     end
 end
@@ -205,15 +222,17 @@ local function apply_storage_constraints(force_save)
     if force_save then
         save_needed = false
         save_last_clock = os.clock()
-        save_messages()
+        save_messages(true)
     else
         mark_save_needed()
     end
 end
 
-save_messages = function()
-    trim_messages_by_ttl()
-    trim_messages_by_limits()
+save_messages = function(skip_trim)
+    if not skip_trim then
+        trim_messages_by_ttl()
+        trim_messages_by_limits()
+    end
 
     local chat_tells = {}
     local combat_tells = {}
@@ -278,6 +297,7 @@ local function add_tell(sender, text, from, auto_translate_braces, chat_mode, so
     end
     text = text or ''
     local now = os.time()
+    local dedupe_seconds = tonumber(behavior_cfg.dedupe_seconds) or 0
     local mode_num = nil
     if type(chat_mode) == 'number' then
         mode_num = math.floor(chat_mode)
@@ -290,7 +310,7 @@ local function add_tell(sender, text, from, auto_translate_braces, chat_mode, so
         from_name = display_names[canonical] or original_tab or msg_cfg.unknown_sender
     end
     local last = tells[canonical][#tells[canonical]]
-    if last and last.text == text and last.sender == from_name and last.chat_mode == mode_num and last.source_tab == source_canonical and (now - last.time) <= behavior_cfg.dedupe_seconds then
+    if last and last.text == text and last.sender == from_name and last.chat_mode == mode_num and last.source_tab == source_canonical and (now - last.time) <= dedupe_seconds then
         if not display_names[canonical] or display_names[canonical] == '' then
             display_names[canonical] = original_tab
         end
@@ -299,11 +319,12 @@ local function add_tell(sender, text, from, auto_translate_braces, chat_mode, so
     local braces = nil
     if type(auto_translate_braces) == 'table' and #auto_translate_braces > 0 then
         braces = {}
-        for _, idx in ipairs(auto_translate_braces) do
+        for i = 1, #auto_translate_braces do
+            local idx = auto_translate_braces[i]
             if type(idx) == 'number' then
                 local n = math.floor(idx)
                 if n > 0 then
-                    table.insert(braces, n)
+                    braces[#braces + 1] = n
                 end
             end
         end
@@ -332,9 +353,7 @@ local function add_tell(sender, text, from, auto_translate_braces, chat_mode, so
     -- Enforce per-tab message cap (trim oldest entries)
     local max_msgs = (canonical == combat_tab_canonical) and get_combat_max_messages_per_tab() or get_chat_max_messages_per_tab()
     local tab_msgs = tells[canonical]
-    while #tab_msgs > max_msgs do
-        table.remove(tab_msgs, 1)
-    end
+    trim_oldest_messages(tab_msgs, max_msgs)
     mark_save_needed()
     return canonical, true
 end
@@ -387,6 +406,28 @@ local get_local_player_name = presence_tracker.get_local_player_name
 local get_party_member_canonicals = presence_tracker.get_party_member_canonicals
 local get_visible_player_canonicals = presence_tracker.get_visible_player_canonicals
 local get_visible_non_player_canonicals = presence_tracker.get_visible_non_player_canonicals
+
+local function show_whispers_help()
+    local lines = {
+        '[Whispers] Command help:',
+        '[Whispers] /whispers chat - Toggle the main chat window.',
+        '[Whispers] /whispers combat - Toggle the combat log window.',
+        '[Whispers] /whispers help - Show this command list.',
+        '[Whispers] /whispers - Open the Whispers settings window.',
+    }
+
+    local chat = AshitaCore and AshitaCore:GetChatManager() or nil
+    if chat ~= nil and chat.AddChatMessage ~= nil then
+        for _, line in ipairs(lines) do
+            chat:AddChatMessage(122, false, line)
+        end
+        return
+    end
+
+    for _, line in ipairs(lines) do
+        print(line)
+    end
+end
 
 local function open_tab_for_message(canonical, is_new, suppress_unread)
     local was_open = state.is_open[1]
@@ -548,10 +589,18 @@ ashita.events.register('command', 'whispers_command', function (e)
 
     e.blocked = true;
     local subcommand = (args[2] and tostring(args[2]):lower()) or ''
-    if subcommand == 'ui' or subcommand == 'chat' then
-        local should_open = not (state.is_open[1] or state.combat_is_open[1])
-        state.is_open[1] = should_open
-        state.combat_is_open[1] = should_open
+    if subcommand == 'chat' then
+        state.is_open[1] = not state.is_open[1]
+        return;
+    end
+
+    if subcommand == 'combat' then
+        state.combat_is_open[1] = not state.combat_is_open[1]
+        return;
+    end
+
+    if subcommand == 'help' then
+        show_whispers_help()
         return;
     end
 

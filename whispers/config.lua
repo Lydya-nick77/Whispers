@@ -88,6 +88,9 @@ config.combat = {
         '^you find nothing on the .+%.$',
         '^you find nothing on .+%.$',
         '^you take .+ out of delivery slot %d+%.?$',
+        '^you do not meet the requirements to obtain .+%.$',
+        '^.+ abjuration lost%.?$',
+        '^.+ lot for .+: [%d,]+ points%.?$',
         '^the money the buyer paid for .+ you put on auction, [%d,]+ gil%.?$',
         '^you obtains? %d+ gil%s*%.?$',
         '^.+ obtains? %d+ gil%s*%.?$',
@@ -128,6 +131,8 @@ config.crafting_helm = {
         '^.+our hatchet breaks%.?$',
         '^.+our sickle breaks%.?$',
         '^.+obtained [%d,]+ .+%.?$',
+        '^.+obtained an? .+%.?$',
+        '^.+obtained some .+%.?$',
         '^.+lost an? .+$',
     },
 }
@@ -258,9 +263,9 @@ config.style = {
 
         -- Chat child panel
         child_bg           = { 0.04, 0.04, 0.08, 0.70 },  -- Darker inset for the message area
-        scrollbar_bg       = { 0.02, 0.02, 0.05, 0.00 },  -- Hidden with transparent window
-        scrollbar_grab     = { 0.20, 0.22, 0.38, 0.00 },  -- Hidden with transparent window
-        scrollbar_grab_hov = { 0.28, 0.30, 0.50, 0.00 },  -- Hidden with transparent window
+        scrollbar_bg       = { 0.02, 0.02, 0.05, 0.40 },
+        scrollbar_grab     = { 0.20, 0.22, 0.38, 0.70 },
+        scrollbar_grab_hov = { 0.28, 0.30, 0.50, 0.90 },
         separator          = { 0.24, 0.26, 0.42, 0.70 },
 
         -- Input field

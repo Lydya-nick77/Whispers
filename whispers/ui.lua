@@ -23,6 +23,20 @@ local ui = {}
 local last_message_keys = {}
 local last_message_refs = {}
 local combat_last_message_key = nil
+local style_cache = {
+    base_config = nil,
+    cfg = nil,
+    theme = nil,
+    value = nil,
+}
+local color_cache = {
+    base_colors = nil,
+    cfg = nil,
+    colors = nil,
+    value = nil,
+}
+local build_effective_style
+local build_effective_colors
 
 local function build_message_key(message)
     if not message then return nil end
@@ -56,26 +70,56 @@ local function is_vkey_down(vkey)
     return ok and value and bit.band(value, 0x8000) ~= 0
 end
 
-local function build_tab_names(default_tabs, player_order, normalize_name)
+local function build_main_tab_names(default_tabs, player_order, normalize_name, combat_tab)
     local names = {}
     for _, tab in ipairs(default_tabs) do
-        table.insert(names, normalize_name(tab.canonical))
+        local name = normalize_name(tab.canonical)
+        if name ~= combat_tab then
+            names[#names + 1] = name
+        end
     end
     for _, name in ipairs(player_order) do
-        table.insert(names, name)
+        if name ~= combat_tab then
+            names[#names + 1] = name
+        end
     end
     return names
 end
 
-local function build_main_tab_names(default_tabs, player_order, normalize_name, combat_tab)
-    local all_names = build_tab_names(default_tabs, player_order, normalize_name)
-    local names = {}
-    for _, name in ipairs(all_names) do
-        if name ~= combat_tab then
-            table.insert(names, name)
-        end
+local function resolve_effective_style(base_config, cfg, force_refresh)
+    local cfg_theme = (cfg and cfg.theme) or nil
+    if not force_refresh
+        and style_cache.base_config == base_config
+        and style_cache.cfg == cfg
+        and style_cache.theme == cfg_theme
+        and style_cache.value ~= nil then
+        return style_cache.value
     end
-    return names
+
+    local resolved = build_effective_style(base_config, cfg)
+    style_cache.base_config = base_config
+    style_cache.cfg = cfg
+    style_cache.theme = cfg_theme
+    style_cache.value = resolved
+    return resolved
+end
+
+local function resolve_effective_colors(base_colors, cfg, force_refresh)
+    local cfg_colors = (cfg and cfg.colors) or nil
+    if not force_refresh
+        and color_cache.base_colors == base_colors
+        and color_cache.cfg == cfg
+        and color_cache.colors == cfg_colors
+        and color_cache.value ~= nil then
+        return color_cache.value
+    end
+
+    local resolved = build_effective_colors(base_colors, cfg)
+    color_cache.base_colors = base_colors
+    color_cache.cfg = cfg
+    color_cache.colors = cfg_colors
+    color_cache.value = resolved
+    return resolved
 end
 
 local function ensure_selected_tab(state, tells, names)
@@ -96,7 +140,7 @@ local function ensure_selected_tab(state, tells, names)
     end
 end
 
-local function build_effective_style(base_config, cfg)
+build_effective_style = function(base_config, cfg)
     local config_style = base_config.style or {}
     local effective = {}
     for k, v in pairs(config_style) do effective[k] = v end
@@ -114,7 +158,7 @@ local function build_effective_style(base_config, cfg)
     return effective
 end
 
-local function build_effective_colors(base_colors, cfg)
+build_effective_colors = function(base_colors, cfg)
     local effective = {}
     for k, v in pairs(base_colors or {}) do
         if type(v) == 'table' then
@@ -616,9 +660,9 @@ local function render_config_window(context)
                         imgui.Spacing()
                         color_row('Background',              th, 'child_bg',          base_theme.child_bg          or {0.04, 0.04, 0.08, 0.70}, cflags, cfg, context)
                         color_row('Separator',               th, 'separator',          base_theme.separator          or {0.24, 0.26, 0.42, 0.70}, cflags, cfg, context)
-                        color_row('Scrollbar',               th, 'scrollbar_bg',       base_theme.scrollbar_bg       or {0.02, 0.02, 0.05, 0.00}, cflags, cfg, context)
-                        color_row('Scrollbar Grab',          th, 'scrollbar_grab',     base_theme.scrollbar_grab     or {0.20, 0.22, 0.38, 0.00}, cflags, cfg, context)
-                        color_row('Scrollbar Grab Hovered',  th, 'scrollbar_grab_hov', base_theme.scrollbar_grab_hov or {0.28, 0.30, 0.50, 0.00}, cflags, cfg, context)
+                        color_row('Scrollbar',               th, 'scrollbar_bg',       base_theme.scrollbar_bg       or {0.02, 0.02, 0.05, 0.40}, cflags, cfg, context)
+                        color_row('Scrollbar Grab',          th, 'scrollbar_grab',     base_theme.scrollbar_grab     or {0.20, 0.22, 0.38, 0.70}, cflags, cfg, context)
+                        color_row('Scrollbar Grab Hovered',  th, 'scrollbar_grab_hov', base_theme.scrollbar_grab_hov or {0.28, 0.30, 0.50, 0.90}, cflags, cfg, context)
                         shape_slider('Scrollbar Rounding', th, 'scrollbar_rounding', base_style.scrollbar_rounding or 4.0, 0.0, 12.0, cfg, context)
                         shape_slider('Scrollbar Size',     th, 'scrollbar_size',     base_style.scrollbar_size     or 8.0, 1.0, 20.0, cfg, context)
                         imgui.Spacing()
@@ -825,23 +869,33 @@ local function render_config_window(context)
     pop_xiui_config_theme()
 end
 
-local function is_unread_blink_enabled(unread_cfg, tab_name)
-    local cfg = unread_cfg or {}
-    local blink_tabs = cfg.blink_tabs
-    if type(blink_tabs) ~= 'table' then
-        return true
-    end
+local function is_unread_blink_enabled(base_unread_cfg, unread_override, tab_name)
+    local override_tabs = (type(unread_override) == 'table' and type(unread_override.blink_tabs) == 'table') and unread_override.blink_tabs or nil
+    local base_tabs = (type(base_unread_cfg) == 'table' and type(base_unread_cfg.blink_tabs) == 'table') and base_unread_cfg.blink_tabs or nil
 
-    local tab_setting = blink_tabs[tab_name]
-    if tab_setting ~= nil then
-        return tab_setting ~= false
+    if override_tabs ~= nil and override_tabs[tab_name] ~= nil then
+        return override_tabs[tab_name] ~= false
     end
-
-    if blink_tabs.default ~= nil then
-        return blink_tabs.default ~= false
+    if base_tabs ~= nil and base_tabs[tab_name] ~= nil then
+        return base_tabs[tab_name] ~= false
+    end
+    if override_tabs ~= nil and override_tabs.default ~= nil then
+        return override_tabs.default ~= false
+    end
+    if base_tabs ~= nil and base_tabs.default ~= nil then
+        return base_tabs.default ~= false
     end
 
     return true
+end
+
+local function is_actor_friendly(actor_normalized, local_player_canonical, party_member_canonicals, visible_player_canonicals)
+    if actor_normalized == 'you' or actor_normalized == local_player_canonical then
+        return true
+    end
+
+    return (party_member_canonicals and party_member_canonicals[actor_normalized] == true)
+        or (visible_player_canonicals and visible_player_canonicals[actor_normalized] == true)
 end
 
 local function trim_text(text_value)
@@ -920,6 +974,13 @@ local function is_combat_loot_or_gain_line(text_value)
         or text:match('^you find nothing on the .+%.$') ~= nil
         or text:match('^you find nothing on .+%.$') ~= nil
         or text:match('^you take .+ out of delivery slot %d+%.?$') ~= nil
+        or text:match('^you do not meet the requirements to obtain .+%.$') ~= nil
+        or text:match('^.+ abjuration lost%.?$') ~= nil
+        or text:match('^.+ lot for .+: [%d,]+ points%.?$') ~= nil
+        or text:match('^you obtains? an? .+%.$') ~= nil
+        or text:match('^.+ obtains? an? .+%.$') ~= nil
+        or text:match('^you obtains? some .+%.$') ~= nil
+        or text:match('^.+ obtains? some .+%.$') ~= nil
         or text:match('^the money the buyer paid for .+ you put on auction, [%d,]+ gil%.?$') ~= nil
         or text:match('^you obtains? [%d,]+ gil%s*%.?$') ~= nil
         or text:match('^.+ obtains? [%d,]+ gil%s*%.?$') ~= nil
@@ -931,7 +992,7 @@ local function is_combat_loot_or_gain_line(text_value)
         or text:match('^.+ gains? [%d,]+ capacity points?%s*%.?$') ~= nil
 end
 
-local function get_combat_message_kind(msg, local_player_canonical, normalize_name, friendly_player_canonicals, hostile_actor_canonicals)
+local function get_combat_message_kind(msg, local_player_canonical, normalize_name, party_member_canonicals, visible_player_canonicals, hostile_actor_canonicals)
     local rc = msg._rc
     local is_loot, actor, actor_n, is_action, is_item
     if rc ~= nil and rc.pc == local_player_canonical then
@@ -956,11 +1017,7 @@ local function get_combat_message_kind(msg, local_player_canonical, normalize_na
     end
     if is_loot then return 'loot_gain' end
     if is_action and actor then
-        local is_player_action = (
-            actor_n == 'you'
-            or actor_n == local_player_canonical
-            or (friendly_player_canonicals and friendly_player_canonicals[actor_n] == true)
-        )
+        local is_player_action = is_actor_friendly(actor_n, local_player_canonical, party_member_canonicals, visible_player_canonicals)
         local is_known_non_player = (hostile_actor_canonicals and hostile_actor_canonicals[actor_n] == true)
         local is_likely_player = is_player_like_actor_name(actor)
         if is_player_action or (not is_known_non_player and is_likely_player) then
@@ -1057,7 +1114,7 @@ local function update_focus_input_request(context)
     end
 end
 
-local function render_message(context, name, display, message, local_player_canonical, friendly_player_canonicals, hostile_actor_canonicals, is_fixed_channel, is_linkshell, is_linkshell1, is_linkshell2, is_say, is_combat, is_crafting_helm, is_yells, is_server)
+local function render_message(context, name, display, message, local_player_canonical, party_member_canonicals, visible_player_canonicals, hostile_actor_canonicals, is_fixed_channel, is_linkshell, is_linkshell1, is_linkshell2, is_say, is_combat, is_crafting_helm, is_yells, is_server)
     local color_cfg = context.effective_color_cfg or context.color_cfg
     local normalize_name = context.normalize_name
 
@@ -1144,11 +1201,7 @@ local function render_message(context, name, display, message, local_player_cano
         local combat_color = color_cfg.combat or color_cfg.tell
         local actor_name = rc.actor
         local actor_normalized = rc.actor_n
-        local is_player_action = (
-            actor_normalized == 'you'
-            or actor_normalized == local_player_canonical
-            or (friendly_player_canonicals and friendly_player_canonicals[actor_normalized] == true)
-        )
+        local is_player_action = is_actor_friendly(actor_normalized, local_player_canonical, party_member_canonicals, visible_player_canonicals)
         local is_known_non_player = (hostile_actor_canonicals and hostile_actor_canonicals[actor_normalized] == true)
         local is_likely_player = is_player_like_actor_name(actor_name)
         if rc.is_loot_or_gain then
@@ -1197,12 +1250,11 @@ local function render_message(context, name, display, message, local_player_cano
                 end
             end
 
-            local party_tab = normalize_name(((context.config and context.config.tabs) or {}).party or 'party')
             if source_tab == context.linkshell1_tab then
                 line_color = color_cfg.linkshell1 or color_cfg.tell
             elseif source_tab == context.linkshell2_tab then
                 line_color = color_cfg.linkshell2 or color_cfg.tell
-            elseif source_tab == party_tab then
+            elseif source_tab == context.party_tab then
                 line_color = color_cfg.party or color_cfg.tell
             elseif source_tab == context.say_tab then
                 line_color = color_cfg.say or color_cfg.tell
@@ -1247,24 +1299,12 @@ function ui.render(context)
     local player_order = context.get_player_order()
     local config = context.config
     local ui_cfg = context.ui_cfg
-    local unread_cfg = context.unread_cfg or {}
+    local base_unread_cfg = context.unread_cfg or {}
     local unread_override = (cfg and cfg.unread) or {}
-    local merged_blink_tabs = {}
-    local base_blink_tabs = unread_cfg.blink_tabs or {}
-    for tab_name, enabled in pairs(base_blink_tabs) do
-        merged_blink_tabs[tab_name] = enabled
-    end
-    if type(unread_override.blink_tabs) == 'table' then
-        for tab_name, enabled in pairs(unread_override.blink_tabs) do
-            merged_blink_tabs[tab_name] = enabled
-        end
-    end
-    unread_cfg = {
-        blink_speed_hz = tonumber(unread_override.blink_speed_hz) or tonumber(unread_cfg.blink_speed_hz) or 2,
-        tab_color_a = unread_override.tab_color_a or unread_cfg.tab_color_a,
-        tab_color_b = unread_override.tab_color_b or unread_cfg.tab_color_b,
-        blink_tabs = merged_blink_tabs,
-    }
+    local blink_speed_hz = tonumber(unread_override.blink_speed_hz) or tonumber(base_unread_cfg.blink_speed_hz) or 2
+    local unread_tab_color_a = unread_override.tab_color_a or base_unread_cfg.tab_color_a
+    local unread_tab_color_b = unread_override.tab_color_b or base_unread_cfg.tab_color_b
+    local blink_on = (math.floor(os.clock() * blink_speed_hz) % 2) == 0
     local chat_layout_cfg = ui_cfg.chat_layout or {}
     local read_only_footer_padding = tonumber(chat_layout_cfg.read_only_footer_padding) or 12
     local input_row_padding = tonumber(chat_layout_cfg.input_row_padding) or 12
@@ -1291,16 +1331,9 @@ function ui.render(context)
     local party_member_canonicals = context.get_party_member_canonicals and context.get_party_member_canonicals() or {}
     local visible_player_canonicals = context.get_visible_player_canonicals and context.get_visible_player_canonicals() or {}
     local visible_non_player_canonicals = context.get_visible_non_player_canonicals and context.get_visible_non_player_canonicals() or {}
-    local friendly_player_canonicals = {}
-    for actor_name in pairs(party_member_canonicals) do
-        friendly_player_canonicals[actor_name] = true
-    end
-    for actor_name in pairs(visible_player_canonicals) do
-        friendly_player_canonicals[actor_name] = true
-    end
 
-    local style = build_effective_style(config, cfg)
-    local effective_color_cfg = build_effective_colors(context.color_cfg, cfg)
+    local style = resolve_effective_style(config, cfg, show_config_window)
+    local effective_color_cfg = resolve_effective_colors(context.color_cfg, cfg, show_config_window)
     context.effective_color_cfg = effective_color_cfg
     local style_var_count, style_color_count = decoration.push(style)
     local window_flags = decoration.window_flags(style)
@@ -1350,7 +1383,7 @@ function ui.render(context)
                         local msgs = tells[name]
                         local display = display_names[name] or name
                         local is_unread = unread[name] and (state.selected ~= name)
-                        local blink_unread = is_unread and is_unread_blink_enabled(unread_cfg, name)
+                        local blink_unread = is_unread and is_unread_blink_enabled(base_unread_cfg, unread_override, name)
                         local label = display .. '##' .. name
                         local pushed = 0
                         local tab_flags = ImGuiTabItemFlags_None
@@ -1358,9 +1391,7 @@ function ui.render(context)
                             tab_flags = bit.bor(tab_flags, ImGuiTabItemFlags_UnsavedDocument)
                         end
                         if blink_unread then
-                            local blink_speed_hz = tonumber(unread_cfg.blink_speed_hz) or 2
-                            local blink_on = (math.floor(os.clock() * blink_speed_hz) % 2) == 0
-                            local clr = blink_on and unread_cfg.tab_color_a or unread_cfg.tab_color_b
+                            local clr = blink_on and unread_tab_color_a or unread_tab_color_b
                             imgui.PushStyleColor(ImGuiCol_TabActive, clr); pushed = pushed + 1
                             imgui.PushStyleColor(ImGuiCol_Tab, clr); pushed = pushed + 1
                         end
@@ -1404,7 +1435,7 @@ function ui.render(context)
                             imgui.BeginChild('##chat_' .. name, { 0, chat_height }, false)
                             imgui.SetWindowFontScale(message_font_scale)
                             for i = 1, #msgs do
-                                render_message(context, name, display, msgs[i], local_player_canonical, friendly_player_canonicals, visible_non_player_canonicals, is_fixed_channel, is_linkshell, is_linkshell1, is_linkshell2, is_say, is_combat, is_crafting_helm, is_yells, is_server)
+                                render_message(context, name, display, msgs[i], local_player_canonical, party_member_canonicals, visible_player_canonicals, visible_non_player_canonicals, is_fixed_channel, is_linkshell, is_linkshell1, is_linkshell2, is_say, is_combat, is_crafting_helm, is_yells, is_server)
                             end
                             local latest_message = msgs[#msgs]
                             local latest_key = build_message_key(latest_message)
@@ -1535,16 +1566,28 @@ function ui.render(context)
 
             imgui.SetWindowFontScale(font_scale)
 
-            imgui.Text('Combat Log')
-            imgui.Separator()
-
             local combat_name = context.combat_tab
             local combat_display = display_names[combat_name] or 'Combat Log'
             local combat_msgs = tells[combat_name] or {}
+
+            -- Header row: title left, Clear button right-aligned
+            imgui.Text('Combat Log')
+            imgui.SameLine()
+            local avail_w = imgui.GetContentRegionAvail()
+            local btn_w = imgui.CalcTextSize('Clear') + 16
+            imgui.SetCursorPosX(imgui.GetCursorPosX() + avail_w - btn_w)
+            if imgui.Button('Clear##combat_window_hdr') then
+                context.clear_tab(combat_name)
+                combat_last_message_key = nil
+                if context.set_combat_last_msg_count then
+                    context.set_combat_last_msg_count(0)
+                end
+            end
+            imgui.Separator()
+
             local _, avail_height = imgui.GetContentRegionAvail()
             local line_height = imgui.GetTextLineHeight()
-            local controls_reserved_height = line_height + read_only_footer_padding
-            local chat_height = math.max(min_chat_height, (avail_height or 0) - controls_reserved_height)
+            local chat_height = math.max(min_chat_height, (avail_height or 0))
 
             imgui.BeginChild('##combat_window_chat', { 0, chat_height }, false)
             imgui.SetWindowFontScale(message_font_scale)
@@ -1553,7 +1596,7 @@ function ui.render(context)
             local combat_filter_base = (context.config and context.config.combat_filters) or {}
             for i = 1, #combat_msgs do
                 local msg = combat_msgs[i]
-                local kind = get_combat_message_kind(msg, local_player_canonical, context.normalize_name, friendly_player_canonicals, visible_non_player_canonicals)
+                local kind = get_combat_message_kind(msg, local_player_canonical, context.normalize_name, party_member_canonicals, visible_player_canonicals, visible_non_player_canonicals)
                 local filter_enabled
                 if combat_filter_disabled[kind] == true then
                     filter_enabled = false
@@ -1563,7 +1606,7 @@ function ui.render(context)
                     filter_enabled = (combat_filter_base[kind] ~= false)
                 end
                 if filter_enabled then
-                    render_message(context, combat_name, combat_display, msg, local_player_canonical, friendly_player_canonicals, visible_non_player_canonicals, true, false, false, false, false, true, false, false, false)
+                    render_message(context, combat_name, combat_display, msg, local_player_canonical, party_member_canonicals, visible_player_canonicals, visible_non_player_canonicals, true, false, false, false, false, true, false, false, false)
                 end
             end
             local combat_latest_key = build_message_key(combat_msgs[#combat_msgs])
@@ -1577,13 +1620,6 @@ function ui.render(context)
                 context.set_combat_last_msg_count(#combat_msgs)
             end
             imgui.EndChild()
-
-            imgui.Separator()
-            if imgui.Button('Clear##combat_window') then
-                context.clear_tab(combat_name)                combat_last_message_key = nil                if context.set_combat_last_msg_count then
-                    context.set_combat_last_msg_count(0)
-                end
-            end
 
             local posX, posY = imgui.GetWindowPos()
             local sizeX, sizeY = imgui.GetWindowSize()
