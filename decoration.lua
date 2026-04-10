@@ -8,12 +8,22 @@ local decoration = {}
 
 -- Pushes all style vars and colors defined in config.style onto the ImGui stack.
 -- Returns (var_count, color_count) so the caller can pop them later with decoration.pop().
-function decoration.push(style)
+function decoration.push(style, opacity)
     local theme       = style.theme or {}
     local var_count   = 0
     local color_count = 0
     local function push_var(var, val) imgui.PushStyleVar(var, val);   var_count   = var_count   + 1 end
     local function push_clr(col, val) imgui.PushStyleColor(col, val); color_count = color_count + 1 end
+
+    local window_bg = theme.window_bg or {0,0,0,0.9}
+    local base_child_bg = theme.child_bg or {0,0,0,1.0}
+    local alpha = tonumber(opacity)
+    if alpha ~= nil then
+        local a = math.max(0.0, math.min(1.0, alpha))
+        window_bg = { window_bg[1], window_bg[2], window_bg[3], a }
+        base_child_bg = { base_child_bg[1], base_child_bg[2], base_child_bg[3], a }
+    end
+    local child_bg = base_child_bg
 
     -- Shape / layout vars
     push_var(ImGuiStyleVar_WindowRounding,    style.window_rounding    or 8.0)
@@ -25,7 +35,7 @@ function decoration.push(style)
     push_var(ImGuiStyleVar_ScrollbarSize,     style.scrollbar_size     or 14.0)
 
     -- Window chrome
-    push_clr(ImGuiCol_WindowBg,             theme.window_bg          or {0,0,0,0.9})
+    push_clr(ImGuiCol_WindowBg,             window_bg)
     push_clr(ImGuiCol_TitleBg,              theme.title_bg           or {0,0,0,1})
     push_clr(ImGuiCol_TitleBgActive,        theme.title_bg_active    or {0,0,0,1})
     push_clr(ImGuiCol_TitleBgCollapsed,     theme.title_bg_collapsed or {0,0,0,0.9})
@@ -37,7 +47,7 @@ function decoration.push(style)
     push_clr(ImGuiCol_TabActive,            theme.tab_active         or {0.2,0.25,0.45,1})
 
     -- Chat child panel
-    push_clr(ImGuiCol_ChildBg,              theme.child_bg           or {0,0,0,0.5})
+    push_clr(ImGuiCol_ChildBg,              child_bg)
     push_clr(ImGuiCol_ScrollbarBg,          theme.scrollbar_bg       or {0,0,0,0.4})
     push_clr(ImGuiCol_ScrollbarGrab,        theme.scrollbar_grab     or {0.2,0.2,0.4,0.8})
     push_clr(ImGuiCol_ScrollbarGrabHovered, theme.scrollbar_grab_hov or {0.3,0.3,0.5,0.9})

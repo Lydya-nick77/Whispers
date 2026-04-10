@@ -9,13 +9,6 @@ config.default_window = {
     y      = 100,
 }
 
-config.default_combat_window = {
-    width  = 500,
-    height = 220,
-    x      = 620,
-    y      = 100,
-}
-
 -- Global font scale for the Whispers window. 1.0 = default size.
 config.font_scale = 1.0
 
@@ -25,22 +18,13 @@ config.message_font_scale = 1.1
 -- UI behavior and rendering constants.
 config.ui = {
     min_font_scale = 0.5,
-    input_max_length = 512,
+    input_max_length = 119,
     bold_offset_x = 0.8,
     scroll_to_bottom_fraction = 1.0,  -- 0.0 = top, 1.0 = bottom; fraction to jump to on new messages
-    shortcuts = {
-        focus_input = {
-            enabled = true,
-            vkey = 0x52,      -- Ctrl+R
-            require_ctrl = true,
-            require_shift = false,
-            require_alt = false,
-        },
-    },
     chat_layout = {
         min_chat_height = 1,
-        read_only_footer_padding = 12,
-        input_row_padding = 12,
+        read_only_footer_padding = 4,
+        input_row_padding = 4,
     },
 }
 
@@ -62,79 +46,9 @@ config.parser = {
         '^(.-)>>%s*(.*)$',
         '^(.-)%>%>%s*(.*)$',
         '^(.-)%s+shouts%s*:%s*(.*)$',                -- "Name shouts: text"
-        '^(.-)%s+yells across[^:]*:%s*(.*)$',        -- "Name yells across Vana'diel: text"
     },
     name_colon_pattern = '^([%a][%w_%-]+)%s*:%s*(.*)$',
     leading_timestamp_pattern = '^%s*[%[%{<]?%d%d:%d%d:?%d?%d?[%]%}>]?%s*',
-}
-
--- Fallback text matching for combat lines when chat mode IDs are not mapped.
-config.combat = {
-    fallback_patterns = {
-        '^.+ begin casting .+$',
-        '^.+ begins casting .+$',
-        '^.+ start casting .+$',
-        '^.+ starts casting .+$',
-        '^.+ casts .+$',
-        '^.+ readies .+$',
-        '^.+ uses .+$',
-        '^.+ use an .+$',
-        '^%b[]%s*.+%s*%-%>%s*.+$',
-        '^%b[]%s*.+%s*%=%>%s*.+$',
-    },
-    loot_patterns = {
-        '^you find .+ on the .+%.$',
-        '^you find .+ on .+%.$',
-        '^you find nothing on the .+%.$',
-        '^you find nothing on .+%.$',
-        '^you take .+ out of delivery slot %d+%.?$',
-        '^you do not meet the requirements to obtain .+%.$',
-        '^.+ abjuration lost%.?$',
-        '^.+ lot for .+: [%d,]+ points%.?$',
-        '^the money the buyer paid for .+ you put on auction, [%d,]+ gil%.?$',
-        '^you obtains? %d+ gil%s*%.?$',
-        '^.+ obtains? %d+ gil%s*%.?$',
-        '^you gains? [%d,]+ experience points?%s*%.?$',
-        '^.+ gains? [%d,]+ experience points?%s*%.?$',
-        '^you gains? [%d,]+ limit points?%s*%.?$',
-        '^.+ gains? [%d,]+ limit points?%s*%.?$',
-        '^you gains? [%d,]+ capacity points?%s*%.?$',
-        '^.+ gains? [%d,]+ capacity points?%s*%.?$',
-    },
-}
-
--- Crafting / HELM messages (synthesis, mining, logging, excavating, harvesting).
-config.crafting_helm = {
-    fallback_patterns = {
-        '^.+synthesis.+$',
-        '^.+synthesize[s]? .+$',
-        '^.+synthesi[sz]ed .+$',
-        '^.+starts? synthesiz?ing%.?$',
-        '^.+uses an? [^%.]+ crystal%.?$',
-        '^.+craft result:.+$',
-        '^%-+%s*nq synthesis.+$',
-        '^%-+%s*hq synthesis.+$',
-        '^%-+%s*break%s*%(.+%).+$',
-        '^%-+%s*hq tier %d.+$',
-        '^.+dig up an? .+$',
-        '^.+cut off an? .+$',
-        '^.+harvest an? .+$',
-        '^.+uses an? pickaxe%.?$',
-        '^.+uses an? hatchet%.?$',
-        '^.+uses an? sickle%.?$',
-        '^.+uses .+ and finds .+$',
-        '^.+uses .+ but finds nothing%.?$',
-        '^.+unable to mine anything%.?$',
-        '^.+unable to log anything%.?$',
-        '^.+unable to harvest anything%.?$',
-        '^.+our pickaxe breaks%.?$',
-        '^.+our hatchet breaks%.?$',
-        '^.+our sickle breaks%.?$',
-        '^.+obtained [%d,]+ .+%.?$',
-        '^.+obtained an? .+%.?$',
-        '^.+obtained some .+%.?$',
-        '^.+lost an? .+$',
-    },
 }
 
 -- Runtime behavior controls.
@@ -150,30 +64,8 @@ config.tabs = {
     linkshell1 = 'linkshell 1',
     linkshell2 = 'linkshell 2',
     party = 'party',
-    combat = 'combat log',
     say = 'say',
-    yells = 'yells',
-    crafting_helm = 'crafting/helm',
-    server = 'server',
-    read_only = {},
-}
-
-config.tabs.read_only = {
-    [config.tabs.combat] = true,
-    [config.tabs.yells] = true,
-    [config.tabs.crafting_helm] = true,
-    [config.tabs.server] = true,
-}
-
--- Combat log mode IDs mirrored from SimpleLog block_modes.
-config.combat_log_mode_ids = {
-    20, 21, 22, 23, 24, 25, 26, 27,
-    28, 29, 30, 31, 32, 33, 34, 35,
-    40, 41, 42, 43,
-    56, 57, 58, 59, 60, 61, 62, 63,
-    104, 109, 114, 129,
-    162, 163, 164, 165,
-    181, 185, 186, 187, 188,
+    read_only = { all = true },
 }
 
 config.packets = {
@@ -181,7 +73,7 @@ config.packets = {
         incoming_id = 0x0009,
         message_offset = 0x0A + 1,
         message_id = 89,
-        route_tab = config.tabs.yells,
+        route_tab = config.tabs.say,
         text = 'examines you.',
         chat_mode = 15,
     },
@@ -195,25 +87,11 @@ config.unread = {
     -- Per-tab blink toggle (uses canonical tab names). Unknown tabs fall back to `default`.
     blink_tabs = {
         default = true,
-        [config.tabs.all] = true,
         [config.tabs.linkshell1] = true,
         [config.tabs.linkshell2] = true,
         [config.tabs.party] = true,
         [config.tabs.say] = true,
-        [config.tabs.yells] = true,
-        [config.tabs.crafting_helm] = true,
-        [config.tabs.server] = true,
-        [config.tabs.combat] = true,
     },
-}
-
--- Combat log message type filters (enabled by default).
-config.combat_filters = {
-    general       = true,
-    loot_gain     = true,
-    player_item   = true,
-    player_action = true,
-    enemy_action  = true,
 }
 
 -- Addon command configuration.
@@ -230,19 +108,19 @@ config.commands = {
     },
 }
 
--- Window styling
+-- Window styling (XIDB-matched: dark background with gold accents)
 config.style = {
     -- Window behavior flags
     no_title_bar                   = true,   -- Hide the title bar completely
     no_collapse                    = true,   -- Disable the collapse arrow (only relevant when no_title_bar is false)
     no_close_tab_with_middle_mouse = true,   -- Prevent closing tabs by middle-clicking
 
-    -- Shape rounding
-    window_rounding    = 10.0,  -- Corner radius for the main window
-    window_border_size = 1.0,   -- Border thickness (0 = no border)
-    tab_rounding       = 6.0,   -- Corner radius for tabs
-    frame_rounding     = 5.0,   -- Corner radius for input fields
-    frame_border_size  = 0.0,   -- Border for input fields
+    -- Shape rounding (matches XIDB chrome)
+    window_rounding    = 6.0,   -- Corner radius for the main window
+    window_border_size = 1.0,   -- Border thickness
+    tab_rounding       = 4.0,   -- Corner radius for tabs
+    frame_rounding     = 4.0,   -- Corner radius for input fields
+    frame_border_size  = 1.0,   -- Border for input fields
     scrollbar_rounding = 4.0,   -- Corner radius for scrollbar thumb
     scrollbar_size     = 8.0,   -- Scrollbar width in pixels (default is 14)
 
@@ -250,33 +128,33 @@ config.style = {
     -- Set any value to nil to inherit the default ImGui color.
     theme = {
         -- Window chrome
-        window_bg          = { 0.07, 0.07, 0.11, 0.00 },  -- Fully transparent main window background
-        title_bg           = { 0.08, 0.09, 0.17, 1.00 },  -- Dark indigo title bar (unfocused)
-        title_bg_active    = { 0.12, 0.14, 0.28, 1.00 },  -- Slightly brighter when focused
-        title_bg_collapsed = { 0.07, 0.07, 0.12, 0.90 },  -- Collapsed state
-        border             = { 0.30, 0.32, 0.52, 0.00 },  -- Transparent main window border
+        window_bg          = { 0.00, 0.00, 0.00, 0.95 },  -- Near-opaque black (XIDB bg_dark)
+        title_bg           = { 0.098, 0.090, 0.075, 1.00 },  -- XIDB bg_medium
+        title_bg_active    = { 0.137, 0.125, 0.106, 1.00 },  -- XIDB bg_light
+        title_bg_collapsed = { 0.00,  0.00,  0.00,  1.00 },  -- XIDB bg_dark
+        border             = { 0.765, 0.684, 0.474, 0.85 },  -- XIDB border_gold
 
         -- Tab bar
-        tab                = { 0.07, 0.08, 0.15, 0.90 },  -- Inactive tab
-        tab_hovered        = { 0.18, 0.20, 0.36, 1.00 },  -- Hovered tab
-        tab_active         = { 0.22, 0.26, 0.46, 1.00 },  -- Selected tab
+        tab                = { 0.098, 0.090, 0.075, 1.00 },  -- XIDB bg_medium
+        tab_hovered        = { 0.137, 0.125, 0.106, 1.00 },  -- XIDB bg_light
+        tab_active         = { 0.957, 0.855, 0.592, 0.30 },  -- XIDB gold at 30% alpha
 
         -- Chat child panel
-        child_bg           = { 0.04, 0.04, 0.08, 0.70 },  -- Darker inset for the message area
-        scrollbar_bg       = { 0.02, 0.02, 0.05, 0.40 },
-        scrollbar_grab     = { 0.20, 0.22, 0.38, 0.70 },
-        scrollbar_grab_hov = { 0.28, 0.30, 0.50, 0.90 },
-        separator          = { 0.24, 0.26, 0.42, 0.70 },
+        child_bg           = { 0.00, 0.00, 0.00, 1.00 },  -- XIDB ChildBg (pure black)
+        scrollbar_bg       = { 0.098, 0.090, 0.075, 1.00 },  -- XIDB bg_medium
+        scrollbar_grab     = { 0.176, 0.161, 0.137, 1.00 },  -- XIDB bg_lighter
+        scrollbar_grab_hov = { 0.30,  0.275, 0.235, 1.00 },  -- XIDB border_dark
+        separator          = { 0.30,  0.275, 0.235, 1.00 },  -- XIDB border_dark
 
         -- Input field
-        frame_bg           = { 0.09, 0.09, 0.17, 0.80 },
-        frame_bg_hovered   = { 0.13, 0.14, 0.24, 0.90 },
-        frame_bg_active    = { 0.17, 0.18, 0.30, 1.00 },
+        frame_bg           = { 0.125, 0.110, 0.086, 0.98 },  -- XIDB FrameBg
+        frame_bg_hovered   = { 0.173, 0.153, 0.122, 0.98 },  -- XIDB FrameBgHovered
+        frame_bg_active    = { 0.231, 0.200, 0.157, 0.98 },  -- XIDB FrameBgActive
 
         -- Buttons
-        button             = { 0.11, 0.12, 0.22, 1.00 },
-        button_hovered     = { 0.20, 0.22, 0.38, 1.00 },
-        button_active      = { 0.28, 0.32, 0.52, 1.00 },
+        button             = { 0.176, 0.149, 0.106, 0.95 },  -- XIDB button_base
+        button_hovered     = { 0.286, 0.239, 0.165, 0.95 },  -- XIDB button_hover
+        button_active      = { 0.420, 0.353, 0.243, 0.95 },  -- XIDB button_active
     },
 }
 
@@ -290,21 +168,7 @@ config.chat_mode_tabs = {
     [3]   = { tab = 'Linkshell 2', command = '/l2' },
     [14]  = { tab = 'Linkshell 1', command = '/l'  },
     [214] = { tab = 'Linkshell 2', command = '/l2' },
-    [10]  = { tab = 'Yells',       command = '/shout' },
-    [11]  = { tab = 'Yells',       command = '/yell' },
-    [15]  = { tab = 'Yells' },  -- emote
-    [8]   = { tab = 'Crafting/HELM' },
-    [121] = { tab = 'All' },
-    [150] = { tab = 'Server' }, -- server / message
-    [151] = { tab = 'Server' }, -- server / system
-    [152] = { tab = 'Server' }, -- server / message2
 }
-
-for _, mode_id in ipairs(config.combat_log_mode_ids) do
-    if config.chat_mode_tabs[mode_id] == nil then
-        config.chat_mode_tabs[mode_id] = { tab = 'Combat Log' }
-    end
-end
 
 -- Maps canonical (lowercase) tab names to their outgoing chat command prefix
 config.tab_commands = {
@@ -316,39 +180,22 @@ config.tab_commands = {
 
 -- Text colors for chat tabs (RGBA, each component 0.0–1.0)
 config.colors = {
-    all = { 1.0, 1.0, 1.0, 1.0 },              -- White (All tab)
     linkshell1 = { 0.86,  1.0,  0.76,  1.0 },  -- Yellow/green
     linkshell2 = { 0.35, 1.0,   0.35,  1.0 },  -- Light green
     party = { 0.20, 0.95, 1.0, 1.0 },          -- Cyan (party/alliance)
-    combat = { 0.92, 0.92, 0.92, 1.0 },        -- Light gray (matches SimpleLog combat output)
-    combat_loot_gain = { 0.4, 1.0, 0.4, 1.0 }, -- Green (loot, gil, EXP/LP/CP gains in combat log)
-    combat_player_item = { 0.4, 1.0, 0.4, 1.0 },   -- Green (player item use)
-    combat_player_action = { 1.0, 1.0, 0.4, 1.0 }, -- Yellow (player abilities/spells)
-    combat_enemy_action = { 1.0, 0.4, 0.4, 1.0 },  -- Red (enemy abilities/spells)
     tell = { 0.95, 0.45, 1.0, 1.0 },          -- Purple (tells)
     say = { 1.0, 1.0, 1.0, 1.0 },              -- White (Say tab)
-    crafting_helm = { 0.78, 1.0, 0.78, 1.0 },  -- Light green (crafting / HELM)
-    crafting_helm_loss = { 1.0, 0.35, 0.35, 1.0 }, -- Red for break / loss results
-    server = { 1.0, 1.0, 1.0, 1.0 },           -- White (server messages)
-    yells = { 1.0, 0.52, 0.45, 1.0 },          -- Red (yell)
-    shout = { 1.0, 0.36, 0.20, 1.0 },          -- Orange-red (shout)
-    emote = { 0.95, 0.45, 1.0, 1.0 },          -- Purple (emotes in Yells tab)
     autotranslate_open = { 0.25, 1.0, 0.25, 1.0 },   -- Green '{'
     autotranslate_close = { 1.0, 0.25, 0.25, 1.0 },  -- Red '}'
 }
 
 -- Tabs that are always present on load, even before any messages arrive
--- Order: All, LS1, LS2, Party, Say, Yells/Shouts, Crafting/HELM, Server, then Combat Log at the end
 config.default_tabs = {
     { canonical = config.tabs.all, display = 'All' },
     { canonical = config.tabs.linkshell1, display = 'LS 1' },
     { canonical = config.tabs.linkshell2, display = 'LS 2' },
     { canonical = config.tabs.party, display = 'Party' },
     { canonical = config.tabs.say, display = 'Say' },
-    { canonical = config.tabs.yells, display = 'Yells/Shouts' },
-    { canonical = config.tabs.crafting_helm, display = 'Crafting/HELM' },
-    { canonical = config.tabs.server, display = 'Server' },
-    { canonical = config.tabs.combat, display = 'Combat Log' },
 }
 
 return config

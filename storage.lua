@@ -1,5 +1,17 @@
 local storage = {}
 
+-- Helper function to safely escape strings for Lua source code
+local function escape_lua_string(s)
+    if type(s) ~= 'string' then
+        s = tostring(s or '')
+    end
+    -- Use %q for basic escaping, but also handle edge cases
+    local escaped = string.format('%q', s)
+    -- Extra safety: ensure no unescaped newlines slip through
+    escaped = escaped:gsub('\n', '\\n'):gsub('\r', '\\r')
+    return escaped
+end
+
 function storage.make_default_tells(default_tabs)
     local tells = {}
     local display_names = {}
@@ -23,7 +35,7 @@ function storage.save_messages(save_dir, save_file, tells, display_names, player
     handle:write('return {\n')
     handle:write('  tells = {\n')
     for canonical, msgs in pairs(tells) do
-        handle:write(string.format('    [%q] = {\n', canonical))
+        handle:write(string.format('    [%s] = {\n', escape_lua_string(canonical)))
         for _, message in ipairs(msgs) do
             local brace_suffix = ''
             local mode_suffix = ''
@@ -49,22 +61,22 @@ function storage.save_messages(save_dir, save_file, tells, display_names, player
                 end
             end
             if type(message.source_tab) == 'string' and message.source_tab ~= '' then
-                source_tab_suffix = string.format(',source_tab=%q', message.source_tab)
+                source_tab_suffix = string.format(',source_tab=%s', escape_lua_string(message.source_tab))
             end
-            handle:write(string.format('      {time=%d,text=%q,sender=%q%s%s},\n',
-                message.time or 0, message.text or '', message.sender or '', brace_suffix, mode_suffix .. source_tab_suffix))
+            handle:write(string.format('      {time=%d,text=%s,sender=%s%s%s},\n',
+                message.time or 0, escape_lua_string(message.text or ''), escape_lua_string(message.sender or ''), brace_suffix, mode_suffix .. source_tab_suffix))
         end
         handle:write('    },\n')
     end
     handle:write('  },\n')
     handle:write('  display_names = {\n')
     for canonical, display in pairs(display_names) do
-        handle:write(string.format('    [%q]=%q,\n', canonical, display))
+        handle:write(string.format('    [%s]=%s,\n', escape_lua_string(canonical), escape_lua_string(display)))
     end
     handle:write('  },\n')
     handle:write('  player_order = {\n')
     for _, canonical in ipairs(player_order) do
-        handle:write(string.format('    %q,\n', canonical))
+        handle:write(string.format('    %s,\n', escape_lua_string(canonical)))
     end
     handle:write('  },\n')
     handle:write('}\n')

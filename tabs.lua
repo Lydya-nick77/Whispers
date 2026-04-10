@@ -5,15 +5,10 @@ function tabs.create(config, tab_cfg, normalize_name, trim)
     local linkshell_tabs = {}
     local default_tab_displays = {}
     local read_only_tabs = {}
-    local all_tab = normalize_name(tab_cfg.all or 'all')
     local linkshell1_tab = normalize_name(tab_cfg.linkshell1 or 'linkshell 1')
     local linkshell2_tab = normalize_name(tab_cfg.linkshell2 or 'linkshell 2')
     local party_tab = normalize_name(tab_cfg.party or 'party')
     local say_tab = normalize_name(tab_cfg.say or 'say')
-    local combat_tab = normalize_name(tab_cfg.combat or 'combat log')
-    local yells_tab = normalize_name(tab_cfg.yells or 'yells')
-    local crafting_helm_tab = normalize_name(tab_cfg.crafting_helm or 'crafting/helm')
-    local server_tab = normalize_name(tab_cfg.server or 'server')
 
     for _, tab in ipairs(config.default_tabs) do
         local canonical = normalize_name(tab.canonical)
@@ -65,15 +60,10 @@ function tabs.create(config, tab_cfg, normalize_name, trim)
     end
 
     return {
-        all_tab = all_tab,
         linkshell1_tab = linkshell1_tab,
         linkshell2_tab = linkshell2_tab,
         party_tab = party_tab,
         say_tab = say_tab,
-        combat_tab = combat_tab,
-        yells_tab = yells_tab,
-        crafting_helm_tab = crafting_helm_tab,
-        server_tab = server_tab,
         is_fixed_channel_tab = function(name)
             return fixed_channel_tabs[name] == true
         end,

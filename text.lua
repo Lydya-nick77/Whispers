@@ -1,5 +1,24 @@
 local text = {}
 
+local ffi = require('ffi')
+pcall(ffi.cdef, [[
+    int MultiByteToWideChar(uint32_t CodePage, uint32_t dwFlags, char* lpMultiByteStr, int cbMultiByte, wchar_t* lpWideCharStr, int32_t cchWideChar);
+    int WideCharToMultiByte(uint32_t CodePage, uint32_t dwFlags, wchar_t* lpWideCharStr, int32_t cchWideChar, char* lpMultiByteStr, int32_t cbMultiByte, const char* lpDefaultChar, bool* lpUsedDefaultChar);
+]])
+
+local function sjis_to_utf8(input)
+    if not input or #input == 0 then return input end
+    local src = ffi.new('char[?]', #input + 1)
+    ffi.copy(src, input)
+    local wlen = ffi.C.MultiByteToWideChar(932, 0, src, -1, nil, 0)
+    local wbuf = ffi.new('wchar_t[?]', wlen)
+    ffi.C.MultiByteToWideChar(932, 0, src, -1, wbuf, wlen)
+    local clen = ffi.C.WideCharToMultiByte(65001, 0, wbuf, -1, nil, 0, nil, nil)
+    local cbuf = ffi.new('char[?]', clen)
+    ffi.C.WideCharToMultiByte(65001, 0, wbuf, -1, cbuf, clen, nil, nil)
+    return ffi.string(cbuf)
+end
+
 function text.trim(s)
     if not s then
         return s
@@ -26,6 +45,12 @@ function text.normalize_chat_text(parsed_text, keep_translate_brackets)
     -- Convert them to ASCII arrows so combat lines remain readable in this window.
     clean = clean:gsub(string.char(0x81, 0xA8), ' -> ')
     clean = clean:gsub(string.char(0x81, 0xAA), ' => ')
+    clean = clean:gsub(string.char(0x81, 0xF4), '~')   -- music note ♪
+
+    -- Convert any remaining Shift-JIS (CP932) bytes to valid UTF-8 so ImGui doesn't
+    -- crash on sequences like 0x81 0xF4 (♪ music note).  0x07 is an ASCII control byte
+    -- that CP932 passes through unchanged, so the gsub below still works after conversion.
+    clean = sjis_to_utf8(clean)
 
     return clean:gsub(string.char(0x07), '\n')
 end

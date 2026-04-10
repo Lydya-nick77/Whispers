@@ -1,27 +1,3 @@
---[[
-* MIT License
-*
-* Copyright (c) 2023 lydya [github.com/lydya]
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-* SOFTWARE.
-]]--
-
 -- Whispers - is a simple chat replacement addon with tabs.
 -- This addon captures incoming tells and certain chat messages, organizes whispers into tabs by sender, and provides a quick reply interface. 
 -- The main file (whispers.lua) handles addon setup, message routing, and event wiring.
@@ -31,8 +7,8 @@
 
 addon.name    = 'Whispers'
 addon.author  = 'Lydya'
-addon.version = '1.8.0'
-addon.desc    = 'Addon to replace the chat log with tabs and combat log window.'
+addon.version = '2.0.0'
+addon.desc    = 'Addon to replace the chat log with tabs.'
 
 require('common')
 local imgui = require('imgui')
@@ -51,8 +27,6 @@ local ui          = require('ui')
 local ui_cfg = config.ui
 local msg_cfg = config.messages
 local parser_cfg = config.parser
-local combat_cfg = config.combat or {}
-local crafting_cfg = config.crafting_helm or {}
 local behavior_cfg = config.behavior
 local unread_cfg = config.unread
 local command_cfg = config.commands
@@ -70,30 +44,20 @@ local text_wrapped_bold_with_translate_braces = renderer.text_wrapped_bold_with_
 
 local state = {
     is_open = T{ true },
-    combat_is_open = T{ true },
     config_is_open = T{ false },
     config_selected_section = 'global',
     config_selected_mode = 'settings',
     selected = nil,
     input_text = T{ '' },
-    all_tab_input_active = false,
-    all_tab_active_command = nil,
-    all_tab_escape_was_down = false,
-    all_tab_pending_command = nil,
-    all_tab_pending_base_text = nil,
-    all_tab_shortcut_keys = {},
 }
 
 -- Default settings (see config.lua)
 local default_settings = T{
     window = T(config.default_window),
-    combat_window = T(config.default_combat_window),
     font_scale = config.font_scale,
     message_font_scale = config.message_font_scale,
     chat_ttl_seconds = tonumber((config.behavior or {}).message_ttl_seconds) or 86400,
-    combat_ttl_seconds = tonumber((config.behavior or {}).message_ttl_seconds) or 86400,
     chat_max_messages_per_tab = tonumber((config.behavior or {}).max_messages_per_tab) or 300,
-    combat_max_messages_per_tab = tonumber((config.behavior or {}).max_messages_per_tab) or 300,
     theme = T{},
     colors = T{},
     unread = T{
@@ -101,10 +65,6 @@ local default_settings = T{
     },
     window_bg_theme = '-None-',
     window_bg_opacity = 1.0,
-    combat_bg_theme = '-None-',
-    combat_bg_opacity = 1.0,
-    combat_filters = T{},
-    combat_filter_disabled = T{},
 }
 
 -- Load persisted settings
@@ -121,15 +81,14 @@ end)
 local tells, display_names = storage.make_default_tells(config.default_tabs)
 local unread = {}
 local last_msg_count = {}
-local combat_last_msg_count = 0
 local player_order = {}  -- Track the order players are first received
 local player_order_seen = {}
 
 -- Persistence: save/load messages across addon reloads (24-hour TTL)
-local save_dir  = addon.path .. 'data'
-local chat_save_file = addon.path .. 'data/messages.dat'
-local combat_save_file = addon.path .. 'data/combat_messages.dat'
-local combat_tab_canonical = normalize_name((tab_cfg and tab_cfg.combat) or 'combat log')
+-- Paths are resolved per-character once the player name is available.
+local save_dir  = nil
+local chat_save_file = nil
+local messages_loaded = false
 local default_message_ttl_seconds = tonumber(behavior_cfg.message_ttl_seconds) or 86400
 local default_max_messages_per_tab = tonumber(behavior_cfg.max_messages_per_tab) or 300
 
@@ -169,26 +128,16 @@ local function get_chat_ttl_seconds()
     return clamp_int(cfg.chat_ttl_seconds, default_message_ttl_seconds, 60)
 end
 
-local function get_combat_ttl_seconds()
-    return clamp_int(cfg.combat_ttl_seconds, default_message_ttl_seconds, 60)
-end
-
 local function get_chat_max_messages_per_tab()
     return clamp_int(cfg.chat_max_messages_per_tab, default_max_messages_per_tab, 1)
 end
 
-local function get_combat_max_messages_per_tab()
-    return clamp_int(cfg.combat_max_messages_per_tab, default_max_messages_per_tab, 1)
-end
-
 local function trim_messages_by_limits()
     local chat_max = get_chat_max_messages_per_tab()
-    local combat_max = get_combat_max_messages_per_tab()
 
     for canonical, tab_msgs in pairs(tells) do
         if type(tab_msgs) == 'table' then
-            local max_msgs = (canonical == combat_tab_canonical) and combat_max or chat_max
-            trim_oldest_messages(tab_msgs, max_msgs)
+            trim_oldest_messages(tab_msgs, chat_max)
         end
     end
 end
@@ -196,15 +145,13 @@ end
 local function trim_messages_by_ttl()
     local now = os.time()
     local chat_cutoff = now - get_chat_ttl_seconds()
-    local combat_cutoff = now - get_combat_ttl_seconds()
 
     for canonical, tab_msgs in pairs(tells) do
         if type(tab_msgs) == 'table' and #tab_msgs > 0 then
-            local cutoff = (canonical == combat_tab_canonical) and combat_cutoff or chat_cutoff
             local write_index = 1
             for read_index = 1, #tab_msgs do
                 local msg = tab_msgs[read_index]
-                if type(msg) == 'table' and type(msg.time) == 'number' and msg.time >= cutoff then
+                if type(msg) == 'table' and type(msg.time) == 'number' and msg.time >= chat_cutoff then
                     tab_msgs[write_index] = msg
                     write_index = write_index + 1
                 end
@@ -234,18 +181,7 @@ save_messages = function(skip_trim)
         trim_messages_by_limits()
     end
 
-    local chat_tells = {}
-    local combat_tells = {}
-    for canonical, msgs in pairs(tells) do
-        if canonical == combat_tab_canonical then
-            combat_tells[canonical] = msgs
-        else
-            chat_tells[canonical] = msgs
-        end
-    end
-
-    storage.save_messages(save_dir, chat_save_file, chat_tells, display_names, player_order)
-    storage.save_messages(save_dir, combat_save_file, combat_tells, display_names, player_order)
+    storage.save_messages(save_dir, chat_save_file, tells, display_names, player_order)
 end
 
 mark_save_needed = function()
@@ -263,25 +199,13 @@ local function flush_save_if_needed()
     end
 end
 
-storage.load_messages(chat_save_file, tells, display_names, player_order, get_chat_ttl_seconds())
-storage.load_messages(combat_save_file, tells, display_names, player_order, get_combat_ttl_seconds())
-trim_messages_by_limits()
-for _, canonical in ipairs(player_order) do
-    player_order_seen[canonical] = true
-end
-
 local chat_mode_tabs = config.chat_mode_tabs
 local tab_commands    = config.tab_commands
 local tab_context = tabs.create(config, tab_cfg, normalize_name, trim)
-local all_tab = tab_context.all_tab
 local linkshell1_tab = tab_context.linkshell1_tab
 local linkshell2_tab = tab_context.linkshell2_tab
 local party_tab = tab_context.party_tab
 local say_tab = tab_context.say_tab
-local combat_tab = tab_context.combat_tab
-local yells_tab = tab_context.yells_tab
-local crafting_helm_tab = tab_context.crafting_helm_tab
-local server_tab = tab_context.server_tab
 local is_fixed_channel_tab = tab_context.is_fixed_channel_tab
 local is_linkshell_tab = tab_context.is_linkshell_tab
 local is_read_only_tab = tab_context.is_read_only_tab
@@ -351,9 +275,8 @@ local function add_tell(sender, text, from, auto_translate_braces, chat_mode, so
         end
     end
     -- Enforce per-tab message cap (trim oldest entries)
-    local max_msgs = (canonical == combat_tab_canonical) and get_combat_max_messages_per_tab() or get_chat_max_messages_per_tab()
     local tab_msgs = tells[canonical]
-    trim_oldest_messages(tab_msgs, max_msgs)
+    trim_oldest_messages(tab_msgs, get_chat_max_messages_per_tab())
     mark_save_needed()
     return canonical, true
 end
@@ -372,28 +295,6 @@ end
 local parse_examine_sender = function(packet_data)
     return parser.parse_examine_sender(packet_data, trim)
 end
-local is_combat_log_line = function(text)
-    return parser.is_combat_log_line(text, combat_cfg.fallback_patterns, trim)
-end
-local is_mob_loot_line = function(text)
-    return parser.is_mob_loot_line(text, combat_cfg.loot_patterns, trim)
-end
-local is_crafting_helm_line = function(text)
-    return parser.is_combat_log_line(text, crafting_cfg.fallback_patterns, trim)
-end
-local is_skill_up_line = function(text)
-    local value = tostring(text or ''):lower()
-    if value == '' then
-        return false
-    end
-
-    -- Covers both combat and crafting progression lines.
-    -- Examples: "... skill rises 0.1 points.", "... skill reaches level N.",
-    -- and "Your Triple Attack Rate modification has risen to level N."
-    return (value:match('skill rises %d+%.%d+ points%.?$') ~= nil)
-        or (value:match('skill reaches level %d+%.?$') ~= nil)
-        or (value:match('^your .+ modification has risen to level %d+%.?$') ~= nil)
-end
 
 local pending_outgoing = outgoing.create(behavior_cfg, normalize_name, trim, normalize_message_text)
 local remember_pending_outgoing = pending_outgoing.remember
@@ -403,6 +304,29 @@ local pending_linkshell_announcement = nil
 
 local presence_tracker = presence.create(normalize_name, trim)
 local get_local_player_name = presence_tracker.get_local_player_name
+
+local function resolve_save_path()
+    local char_name = get_local_player_name()
+    if char_name and char_name ~= '' then
+        local install = AshitaCore:GetInstallPath()
+        local safe_name = char_name:lower():gsub('[^%w_%-]', '_')
+        save_dir = ('%sconfig\\addons\\Whispers\\%s'):fmt(install, safe_name)
+        chat_save_file = ('%sconfig\\addons\\Whispers\\%s\\messages.dat'):fmt(install, safe_name)
+        return true
+    end
+    return false
+end
+
+local function load_messages_deferred()
+    if messages_loaded then return end
+    if not resolve_save_path() then return end
+    storage.load_messages(chat_save_file, tells, display_names, player_order, get_chat_ttl_seconds())
+    trim_messages_by_limits()
+    for _, canonical in ipairs(player_order) do
+        player_order_seen[canonical] = true
+    end
+    messages_loaded = true
+end
 local get_party_member_canonicals = presence_tracker.get_party_member_canonicals
 local get_visible_player_canonicals = presence_tracker.get_visible_player_canonicals
 local get_visible_non_player_canonicals = presence_tracker.get_visible_non_player_canonicals
@@ -411,7 +335,6 @@ local function show_whispers_help()
     local lines = {
         '[Whispers] Command help:',
         '[Whispers] /whispers chat - Toggle the main chat window.',
-        '[Whispers] /whispers combat - Toggle the combat log window.',
         '[Whispers] /whispers help - Show this command list.',
         '[Whispers] /whispers - Open the Whispers settings window.',
     }
@@ -429,9 +352,9 @@ local function show_whispers_help()
     end
 end
 
-local function open_tab_for_message(canonical, is_new, suppress_unread)
+local function open_tab_for_message(canonical, suppress_unread)
     local was_open = state.is_open[1]
-    if is_new and canonical ~= state.selected and not suppress_unread then
+    if canonical ~= nil and canonical ~= '' and canonical ~= state.selected and not suppress_unread then
         unread[canonical] = os.time()
     end
 
@@ -469,25 +392,14 @@ local function clear_tab(name)
     end
     unread[name] = nil
     last_msg_count[name] = nil
-    if name == combat_tab then
-        combat_last_msg_count = 0
-    end
     save_messages()
 end
 
 local outgoing_router = outgoing_commands.create({
-    parser = parser,
     trim = trim,
-    normalize_name = normalize_name,
     remember_pending_outgoing = remember_pending_outgoing,
     tab_commands = tab_commands,
     command_cfg = command_cfg,
-    all_tab = all_tab,
-    party_tab = party_tab,
-    say_tab = say_tab,
-    linkshell1_tab = linkshell1_tab,
-    linkshell2_tab = linkshell2_tab,
-    yells_tab = yells_tab,
 })
 
 local function queue_tab_message(name, display, message)
@@ -502,18 +414,10 @@ local render_context = {
     color_cfg = color_cfg,
     state = state,
     settings = settings,
-    all_tab = all_tab,
     party_tab = party_tab,
     linkshell1_tab = linkshell1_tab,
     linkshell2_tab = linkshell2_tab,
     say_tab = say_tab,
-    combat_tab = combat_tab,
-    yells_tab = yells_tab,
-    crafting_helm_tab = crafting_helm_tab,
-    server_tab = server_tab,
-    apply_all_tab_command_prefix = function(text, command)
-        return parser.apply_all_tab_command_prefix(text, command, trim)
-    end,
     normalize_name = normalize_name,
     map_line_brace_indices = map_line_brace_indices,
     format_message_line = format_message_line,
@@ -535,12 +439,6 @@ local render_context = {
     end,
     get_last_msg_count = function()
         return last_msg_count
-    end,
-    get_combat_last_msg_count = function()
-        return combat_last_msg_count
-    end,
-    set_combat_last_msg_count = function(value)
-        combat_last_msg_count = tonumber(value) or 0
     end,
     get_player_order = function()
         return player_order
@@ -594,11 +492,6 @@ ashita.events.register('command', 'whispers_command', function (e)
         return;
     end
 
-    if subcommand == 'combat' then
-        state.combat_is_open[1] = not state.combat_is_open[1]
-        return;
-    end
-
     if subcommand == 'help' then
         show_whispers_help()
         return;
@@ -609,8 +502,22 @@ end);
 
 -- Incoming text handler: capture tells and linkshell chat.
 ashita.events.register('text_in', 'whispers_text_in', function (e)
+    -- Respect explicit blocking by earlier addon handlers (e.g. readycheck sync messages).
+    if e.blocked then return end
+    -- Also silently drop readycheck sync messages regardless of addon load order.
+    local raw_check = e.message or ''
+    if raw_check:find('\xEF\xBF\xBD[RC]', 1, true) then return end
     local mode = bit.band(e.mode_modified or e.mode or 0, 0x000000FF);
     local tab_info = chat_mode_tabs[mode]
+
+    -- Don't capture NPC say messages (mode 9); let them pass to the default FFXI chat window.
+    if mode == 9 then return end
+
+    -- Don't capture AH transaction detail lines (e.g. "Buyer -> Seller [1,000G]"); let them pass through.
+    local raw_ah_check = e.message_modified or e.message or ''
+    local plain_ah_check = normalize_chat_text(AshitaCore:GetChatManager():ParseAutoTranslate(raw_ah_check, false), false)
+    plain_ah_check = plain_ah_check:gsub(parser_cfg.leading_timestamp_pattern, '')
+    if plain_ah_check:match('^%S.*%->%s*%S.*%[%d[%d,]*[Gg]%]%s*$') then return end
 
     -- Prefer the modified message (cleaned by Ashita) when available
     local raw = e.message_modified or e.message or ''
@@ -624,6 +531,10 @@ ashita.events.register('text_in', 'whispers_text_in', function (e)
     -- Remove common leading timestamps like [HH:MM:SS] or {HH:MM:SS}
     local cleaned_no_ts = clean:gsub(parser_cfg.leading_timestamp_pattern, '')
     local cleaned_no_ts_plain = clean_without_translate_braces:gsub(parser_cfg.leading_timestamp_pattern, '')
+
+    -- Don't capture Ashita addon/system messages like "[Addons] Loaded addon: ..." or "[CombatLog] ...".
+    -- These are mode-12 system messages that should stay in the default FFXI chat window.
+    if cleaned_no_ts_plain:match('^%[[%a][%w%-_]*%]%s') then return end
     local cleaned_no_ts_plain_lower = cleaned_no_ts_plain:lower()
     local parenthesized_sender, parenthesized_body = cleaned_no_ts_plain:match('^%s*%(([^%)]+)%)%s*(.+)$')
     local explicit_party_format = (
@@ -635,14 +546,6 @@ ashita.events.register('text_in', 'whispers_text_in', function (e)
     local claimed_pending = nil
     local claimed_linkshell_announcement = nil
     local matched_pending = false
-
-    local force_all_tab = (
-        cleaned_no_ts_plain_lower:match('^%s*[%a%s%-]*moogle%s*:') ~= nil
-        or cleaned_no_ts_plain_lower:match('^.+ wishes to trade with you%.?$') ~= nil
-    )
-    if force_all_tab then
-        tab_info = { tab = all_tab }
-    end
 
     -- Route party system feedback messages to the Party tab.
     local force_party_tab = (
@@ -668,61 +571,25 @@ ashita.events.register('text_in', 'whispers_text_in', function (e)
         end
     end
 
-    -- Route addon/system notices to Server, not Say or Combat.
-    local force_server_tab = (
-        cleaned_no_ts_plain_lower:match('^%[addons%]')
-        or cleaned_no_ts_plain_lower:match('^%[ashita%]')
-        or cleaned_no_ts_plain_lower:match('^%[conquest%]')
-        or cleaned_no_ts_plain_lower:match('^%[fps%]')
-        or cleaned_no_ts_plain_lower:match('^%[luashitacast%]')
-        or cleaned_no_ts_plain_lower:match('^%[xiui%]')
-        or cleaned_no_ts_plain_lower:match('^%[points%]')
-    )
-    if force_server_tab then
-        tab_info = { tab = server_tab }
-    end
-
-    local force_combat_loot_tab = (not force_server_tab)
-        and (is_mob_loot_line(cleaned_no_ts_plain) or is_mob_loot_line(cleaned_no_ts))
-    if force_combat_loot_tab then
-        tab_info = {
-            tab = combat_tab,
-        }
-    end
-
-    if (not force_server_tab and not force_all_tab and not force_party_tab and not force_combat_loot_tab) and (mode ~= 12 and (is_skill_up_line(cleaned_no_ts_plain) or is_skill_up_line(cleaned_no_ts))) then
-        tab_info = {
-            tab = combat_tab,
-        }
-    elseif (not force_server_tab and not force_all_tab and not force_party_tab and not force_combat_loot_tab) and (mode ~= 12 and (is_crafting_helm_line(cleaned_no_ts_plain) or is_crafting_helm_line(cleaned_no_ts))) then
-        tab_info = {
-            tab = crafting_helm_tab,
-        }
-    elseif (not force_server_tab and not force_all_tab and not force_party_tab and not force_combat_loot_tab) and (mode ~= 12 and tab_info == nil) then
-        if is_combat_log_line(cleaned_no_ts_plain) or is_combat_log_line(cleaned_no_ts) then
-            tab_info = {
-                tab = combat_tab,
-            }
+    if (not force_party_tab) and (mode ~= 12 and tab_info == nil) then
+        local inferred_tab_info, inferred_text = infer_linkshell_tab_info(cleaned_no_ts)
+        if inferred_tab_info ~= nil then
+            tab_info = inferred_tab_info
+            cleaned_no_ts = inferred_text
+            local _, inferred_plain = infer_linkshell_tab_info(cleaned_no_ts_plain)
+            cleaned_no_ts_plain = inferred_plain or cleaned_no_ts_plain
         else
-            local inferred_tab_info, inferred_text = infer_linkshell_tab_info(cleaned_no_ts)
-            if inferred_tab_info ~= nil then
-                tab_info = inferred_tab_info
-                cleaned_no_ts = inferred_text
-                local _, inferred_plain = infer_linkshell_tab_info(cleaned_no_ts_plain)
-                cleaned_no_ts_plain = inferred_plain or cleaned_no_ts_plain
-            else
-                claimed_pending = take_any_pending_outgoing(cleaned_no_ts)
-                if claimed_pending == nil then
-                    return;
-                end
-                matched_pending = true
-
-                tab_info = {
-                    tab = get_tab_display_name(claimed_pending.tab),
-                }
-                cleaned_no_ts = claimed_pending.text
-                cleaned_no_ts_plain = claimed_pending.text
+            claimed_pending = take_any_pending_outgoing(cleaned_no_ts)
+            if claimed_pending == nil then
+                return;
             end
+            matched_pending = true
+
+            tab_info = {
+                tab = get_tab_display_name(claimed_pending.tab),
+            }
+            cleaned_no_ts = claimed_pending.text
+            cleaned_no_ts_plain = claimed_pending.text
         end
     end
 
@@ -823,53 +690,26 @@ ashita.events.register('text_in', 'whispers_text_in', function (e)
     end
 
     local auto_translate_braces = find_autotranslate_brace_indices(body, body_plain)
-    local canonical, is_new = add_tell(tab_name, body, from_name, auto_translate_braces, mode)
-    if canonical ~= nil and canonical ~= '' and canonical ~= combat_tab and canonical ~= crafting_helm_tab and canonical ~= all_tab then
-        add_tell(all_tab, body, from_name, auto_translate_braces, mode, canonical)
+    local canonical = add_tell(tab_name, body, from_name, auto_translate_braces, mode)
+
+    -- Suppress the message from the main FFXI chat window for tabs we display.
+    if canonical ~= nil and canonical ~= '' then
+        e.blocked = true
     end
 
     local me = normalize_name(get_local_player_name() or '')
     local who = normalize_name(from_name or '')
     local sent_by_me = matched_pending or (me ~= '' and who == me)
-    open_tab_for_message(canonical, is_new, sent_by_me)
+    open_tab_for_message(canonical, sent_by_me)
 end);
 
-ashita.events.register('packet_in', 'whispers_packet_in', function (e)
-    local examine_cfg = packet_cfg.examine or {}
-    local incoming_id = tonumber(examine_cfg.incoming_id) or 0x0009
-    if e.id ~= incoming_id then
-        return
-    end
-
-    local data = e.data_modified or e.data or ''
-    if data == '' then
-        return
-    end
-
-    local message_offset = tonumber(examine_cfg.message_offset) or (0x0A + 1)
-    local message_id = struct.unpack('H', data, message_offset)
-    if message_id ~= (tonumber(examine_cfg.message_id) or 89) then
-        return
-    end
-
-    local examiner = parse_examine_sender(data)
-    local route_tab = normalize_name(examine_cfg.route_tab or yells_tab)
-    local text = tostring(examine_cfg.text or 'examines you.')
-    local chat_mode = tonumber(examine_cfg.chat_mode) or 15
-    local canonical, is_new = add_tell(route_tab, text, examiner, nil, chat_mode)
-    if canonical ~= nil and canonical ~= '' and canonical ~= combat_tab and canonical ~= crafting_helm_tab and canonical ~= all_tab then
-        add_tell(all_tab, text, examiner, nil, chat_mode, canonical)
-    end
-    open_tab_for_message(canonical, is_new)
-end)
-
 ashita.events.register('d3d_present', 'whispers_present', function ()
+    load_messages_deferred()
     flush_save_if_needed()
     ui.render(render_context)
 end);
 
 ashita.events.register('unload', 'whispers_unload', function ()
-    ui.destroy_backgrounds()
 end);
 
 -- Helper command to clear all stored tells
@@ -883,7 +723,6 @@ ashita.events.register('command', 'whispers_clear_all', function (e)
     tells, display_names = storage.make_default_tells(config.default_tabs)
     unread = {}
     last_msg_count = {}
-    combat_last_msg_count = 0
     player_order = {}
     player_order_seen = {}
     pending_outgoing.clear()
